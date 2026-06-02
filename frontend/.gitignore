@@ -1,0 +1,100 @@
+# 하위 프로젝트: mobile/ (Android Kotlin), web/ (Next.js)
+
+# Claude
+.claude/
+CLAUDE.md
+DESIGN.md
+mobile/CONVENTIONS.md
+mobile/docs/
+
+# ───────────── 공통: IDE ─────────────
+.idea/
+.vscode/
+*.iml
+
+# ───────────── 공통: OS 생성 파일 ─────────────
+.DS_Store
+**/.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ───────────── 공통: 로그/임시 ─────────────
+*.log
+*.tmp
+*.swp
+*.bak
+
+# ───────────── 공통: 환경변수 / 시크릿 ─────────────
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Don't ignore example
+!.env.example
+
+# =========================================================
+# mobile/  — Android (Kotlin, Gradle, Hilt)
+# Gradle 빌드 산출물 (root + 하위 모듈 모두 포함 — app/.gradle 등)
+mobile/**/build/
+mobile/**/out/
+mobile/**/bin/
+mobile/**/generated/
+mobile/**/.gradle/
+
+# 로컬 SDK 경로 / 캡처 / NDK (root + 하위 모듈)
+mobile/**/local.properties
+mobile/**/captures/
+mobile/**/.externalNativeBuild/
+mobile/**/.cxx/
+
+# Android 시그니처 / 시크릿 (절대 커밋 금지)
+*.jks
+*.keystore
+keystore.properties
+secrets.properties
+google-services.json
+GoogleService-Info.plist
+
+# 음성 녹음 캐시 (워치 앱이 런타임에 생성)
+*.mp3
+*.mp4
+*.wav
+*.pcm
+
+# web/ Next.js
+web/node_modules/
+web/.pnp
+web/.pnp.*
+web/.yarn/*
+!web/.yarn/patches
+!web/.yarn/plugins
+!web/.yarn/releases
+!web/.yarn/versions
+web/.next/
+web/out/
+web/build/
+web/next-env.d.ts
+web/*.tsbuildinfo
+web/coverage/
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/.pnpm-debug.log*
+
+# Vercel
+web/.vercel
+
+# 현웅이
+src.zip
+
+# 현지
+web/swagger.json
+web/swagger-ai.json
+mobile/swagger.json
+mobile/swagger-ai.json
+mobile/app/google-services.json
+
+# 로컬 작업용 문서 (커밋 대상 아님)
+web/docs/

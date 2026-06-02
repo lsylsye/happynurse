@@ -1,0 +1,1214 @@
+'use client'
+
+import { Plus, Loader2 } from "lucide-react";
+import * as React from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+import { formatHHmm, toIsoDate } from "@/lib/time";
+import { Button } from "@/components/ui/button";
+import { useNursingNotes } from "../hooks/useNursingNotes";
+import {
+  useConfirmNursingNoteItem,
+  useCreateNursingRecord,
+  useDeleteNursingNoteItem,
+  useUpdateNursingRecord,
+} from "../hooks/useNursingRecordMutations";
+import { useUpdateMedicationGroup } from "../hooks/useMedicationAdministrationMutations";
+import {
+  NOTE_TYPE_LABEL,
+  NOTE_TYPE_TONE,
+  type MedicationItem,
+  type NursingNoteItem,
+  type NursingRecordUpdateRequest,
+} from "../types/nursing-note";
+import type { NursingNoteMedicationEditRequest } from "../types/medication-administration";
+import { QuickCorrectionPanel } from "./QuickCorrectionPanel";
+
+// 행마다 mutation hook 을 만들면 N행 = 4N 개의 인스턴스가 되므로 부모에서 단일
+// 인스턴스를 운용하고 NoteRow 에 콜백 + pending\*Id 로 전달한다.
+type NoteRowCallbacks = {
+  onUpdateStt: (
+    nursingRecordId: number,
+    request: NursingRecordUpdateRequest,
+    options?: { onSuccess?: () => void },
+  ) => void;
+  onUpdateMedication: (
+    taggingId: string,
+    request: NursingNoteMedicationEditRequest,
+    options?: { onSuccess?: () => void },
+  ) => void;
+  onConfirm: (itemId: number | string) => void;
+  onDelete: (itemId: number | string) => void;
+  pendingConfirmId: number | string | null;
+  pendingDeleteId: number | string | null;
+  pendingUpdateId: number | string | null;
+};
+
+type NursingTabProps = {
+  encounterId: number | null;
+  // ISO date (yyyy-MM-dd) — 백엔드 필수 파라미터, EMRGrid 의 selectedDate 에서 변환
+  date: string;
+  currentUser: string;
+  myRecordsOnly: boolean;
+  // EMRGrid 헤더의 "편집" 토글 — 꺼져 있으면 동작 컬럼은 draft 행의 "확정"만 노출.
+  isEditMode: boolean;
+  // 사이드바의 "확정 전 기록" 항목 클릭 시 해당 record 로 자동 스크롤. 한 번 처리 후 onFocusHandled 호출.
+  focusRecordId?: number | null;
+  onFocusHandled?: () => void;
+};
+
+export function NursingTab({
+  encounterId,
+  date,
+  currentUser,
+  myRecordsOnly,
+  isEditMode,
+  focusRecordId,
+  onFocusHandled,
+}: NursingTabProps) {
+  const { data, isPending, isError } = useNursingNotes(encounterId, date);
+
+  // 단일 mutation 인스턴스 — 모든 행이 공유.
+  const updateNoteMutation = useUpdateNursingRecord(encounterId);
+  const updateMedicationMutation = useUpdateMedicationGroup(encounterId);
+  const confirmMutation = useConfirmNursingNoteItem(encounterId);
+  const deleteMutation = useDeleteNursingNoteItem(encounterId);
+
+  // mutation.variables 로 어떤 itemId 가 진행 중인지 식별 → 해당 행 버튼만 disabled.
+  const pendingConfirmId = confirmMutation.isPending
+    ? confirmMutation.variables ?? null
+    : null;
+  const pendingDeleteId = deleteMutation.isPending
+    ? deleteMutation.variables ?? null
+    : null;
+  const pendingUpdateId: number | string | null = updateNoteMutation.isPending
+    ? updateNoteMutation.variables?.nursingRecordId ?? null
+    : updateMedicationMutation.isPending
+      ? updateMedicationMutation.variables?.taggingId ?? null
+      : null;
+
+  const handleUpdateStt: NoteRowCallbacks["onUpdateStt"] = (
+    nursingRecordId,
+    request,
+    options,
+  ) => updateNoteMutation.mutate({ nursingRecordId, request }, options);
+  const handleUpdateMedication: NoteRowCallbacks["onUpdateMedication"] = (
+    taggingId,
+    request,
+    options,
+  ) => updateMedicationMutation.mutate({ taggingId, request }, options);
+  const handleConfirm = (itemId: number | string) =>
+    confirmMutation.mutate(itemId);
+  const handleDelete = (itemId: number | string) =>
+    deleteMutation.mutate(itemId);
+
+  // 백엔드는 occurredAt desc 로 내려주지만, 화면은 시간 asc (오래된 위 / 최신 아래) 로 표시 후
+  // 현재 시각 근처 카드를 가운데로 자동 스크롤한다 (PatientAlerts 와 동일 패턴).
+  //
+  // 정렬 키는 HH:mm (분 단위) — full datetime 이 아니라 화면 표시 시각만으로 비교한다.
+  // 이유: prod 에서 AI raw SQL INSERT (`stt.py` 의 NOW()) 와 BE @PrePersist (LocalDateTime.now())
+  // 가 서로 다른 TZ wall-clock 으로 저장되어 occurredAt 의 날짜 부분이 9시간 어긋난 채 같은 date
+  // 필터에 함께 걸려 옴. full datetime 으로 정렬하면 어긋난 날짜 블록이 통째로 앞/뒤로 밀린다.
+  // BE date 필터가 단일 캘린더 날짜 범위로 한정하므로 응답은 한 날 짜리 → HH:mm 정렬로 충분.
+  const filteredNotes = useMemo(() => {
+    return (data ?? [])
+      .filter((note) => {
+        if (myRecordsOnly && note.authorName !== currentUser) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const aDate = new Date(a.occurredAt);
+        const bDate = new Date(b.occurredAt);
+        return (
+          (aDate.getHours() * 60 + aDate.getMinutes()) -
+          (bDate.getHours() * 60 + bDate.getMinutes())
+        );
+      });
+  }, [data, myRecordsOnly, currentUser]);
+
+  const itemRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // focus 진입 시 어느 행을 잠시 강조할지 — 2.5초 자동 해제.
+  const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
+  // 환자/일자 변경 시에만 closest 자동 스크롤 — focus 점프 후 onFocusHandled 로
+  // focusRecordId 가 null 되어 effect 가 재실행될 때 closest 로 되돌아가지 않게 한다.
+  const datasetKey = `${encounterId}-${date}`;
+  const lastAutoScrolledDatasetRef = useRef<string | null>(null);
+  // 인라인 추가 — `+` 버튼 클릭 시 폼이 그 위치에 펼쳐진다.
+  // 백엔드는 confirmedAt 옵셔널 — 미지정 시 서버 현재 시각으로 저장. 끼워넣기 위치에 맞는 시각을
+  // 클라이언트가 prev/next 로부터 계산하고, 사용자가 폼의 TimeInput 으로 수정 가능.
+  // 주의: BE 의 NursingRecordFactory.createManual 은 status=confirmed 로 즉시 저장 (STT 처럼 draft 아님).
+  const [inlineAddIndex, setInlineAddIndex] = useState<number | null>(null);
+  // 추가 직후 새 행 강조 — 서버 응답의 nursingRecordId 를 받아 filteredNotes 에 반영되면 scroll + ring.
+  const [pendingFocusId, setPendingFocusId] = useState<number | null>(null);
+
+  // SSE 도착으로 새로 추가된 행 강조 — 사이드바 점프(highlightedKey) 와 별개 트랙. 2.5s 후 자동 해제.
+  // filteredNotes 변경 시 이전 키 set 과 diff 해 신규 키만 강조. 환자/일자/myRecordsOnly 변경 (사용자 액션)
+  // 시엔 발사 안 함. ref + 별도 timeout map 으로 키별 독립 타이머 운용.
+  const [recentlyAddedSseKeys, setRecentlyAddedSseKeys] = useState<Set<string>>(() => new Set());
+  const prevFilteredKeysRef = useRef<Set<string>>(new Set());
+  const prevDatasetKeyRef = useRef(datasetKey);
+  const prevMyRecordsOnlyRef = useRef(myRecordsOnly);
+  const sseHighlightTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  useEffect(() => {
+    if (filteredNotes.length === 0) return;
+
+    // 1) focus 점프: 해당 row 로 스크롤 + 강조. closest 로 fallback 안 함.
+    if (focusRecordId != null) {
+      const focused = filteredNotes.find(
+        (note) =>
+          note.type === "STT_NOTE" && note.nursingRecordId === focusRecordId,
+      );
+      const focusedKey = focused ? rowKey(focused) : null;
+      const target = focusedKey ? itemRefs.current.get(focusedKey) : null;
+      if (target && focusedKey) {
+        target.scrollIntoView({ block: "center", behavior: "smooth" });
+        /* eslint-disable-next-line react-hooks/set-state-in-effect */
+        setHighlightedKey(focusedKey);
+        // focus 처리 후 closest 자동 스크롤이 다시 동작하지 않도록 datasetKey 기록.
+        lastAutoScrolledDatasetRef.current = datasetKey;
+      }
+      onFocusHandled?.();
+      return;
+    }
+
+    // 2) closest 자동 스크롤은 환자/일자 변경 시에만 1회.
+    //    myRecordsOnly 토글 / 새 기록 추가 등으로 filteredNotes 만 바뀐 경우엔 안 함.
+    if (lastAutoScrolledDatasetRef.current === datasetKey) return;
+    lastAutoScrolledDatasetRef.current = datasetKey;
+
+    // 거리 키는 HH:mm 분 단위 — 정렬과 동일한 사유 (prod 의 TZ 어긋남 케이스에서 AI 기록의
+    // 날짜 부분이 빗나가 full datetime 비교 시 거리가 9시간씩 부풀려지는 것을 피한다).
+    const nowDate = new Date();
+    const nowMinutes = nowDate.getHours() * 60 + nowDate.getMinutes();
+    const minutesOfDay = (iso: string) => {
+      const date = new Date(iso);
+      return date.getHours() * 60 + date.getMinutes();
+    };
+    const closest = filteredNotes.reduce((best, note) => {
+      const distance = Math.abs(minutesOfDay(note.occurredAt) - nowMinutes);
+      const bestDistance = Math.abs(minutesOfDay(best.occurredAt) - nowMinutes);
+      return distance < bestDistance ? note : best;
+    }, filteredNotes[0]);
+    const target = itemRefs.current.get(rowKey(closest));
+    if (target) {
+      target.scrollIntoView({ block: "center" });
+    }
+  }, [filteredNotes, focusRecordId, onFocusHandled, datasetKey]);
+
+  // 추가 직후 새 행 강조 — pendingFocusId 가 filteredNotes 에 나타나면 scroll + ring.
+  useEffect(() => {
+    if (pendingFocusId === null || filteredNotes.length === 0) return;
+    const found = filteredNotes.find(
+      (note) =>
+        note.type === "STT_NOTE" && note.nursingRecordId === pendingFocusId,
+    );
+    if (!found) return;
+    const key = rowKey(found);
+    const target = itemRefs.current.get(key);
+    if (target) {
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+      /* eslint-disable-next-line react-hooks/set-state-in-effect */
+      setHighlightedKey(key);
+      setPendingFocusId(null);
+      // 새 행으로 명시 점프 — closest 자동 스크롤이 다시 작동하지 않게 dataset 기록.
+      lastAutoScrolledDatasetRef.current = datasetKey;
+    }
+  }, [pendingFocusId, filteredNotes, datasetKey]);
+
+  // 하이라이트 자동 해제 — 어느 행이 focus 인지 잠시만 보여주고 사라짐.
+  useEffect(() => {
+    if (highlightedKey === null) return;
+    const timeoutId = window.setTimeout(() => setHighlightedKey(null), 2500);
+    return () => window.clearTimeout(timeoutId);
+  }, [highlightedKey]);
+
+  // SSE 도착 시 신규 키 강조 — invalidate → 재조회 후 filteredNotes 가 새 키를 포함하면 highlight 발사.
+  // 사용자 액션 (날짜/환자/myRecordsOnly 토글) 의 변경은 SSE 가 아니므로 발사 안 함. 첫 로드 (이전 빈 set)
+  // 도 마찬가지로 발사 안 함 — 초기 데이터 도착을 신규 추가로 오인하지 않기 위함.
+  useEffect(() => {
+    const currentKeys = new Set(filteredNotes.map(rowKey));
+
+    if (
+      prevDatasetKeyRef.current !== datasetKey
+      || prevMyRecordsOnlyRef.current !== myRecordsOnly
+    ) {
+      prevDatasetKeyRef.current = datasetKey;
+      prevMyRecordsOnlyRef.current = myRecordsOnly;
+      prevFilteredKeysRef.current = currentKeys;
+      return;
+    }
+
+    if (prevFilteredKeysRef.current.size === 0) {
+      prevFilteredKeysRef.current = currentKeys;
+      return;
+    }
+
+    const newKeys = [...currentKeys].filter((k) => !prevFilteredKeysRef.current.has(k));
+    if (newKeys.length > 0) {
+      setRecentlyAddedSseKeys((prev) => {
+        const next = new Set(prev);
+        for (const k of newKeys) next.add(k);
+        return next;
+      });
+      for (const k of newKeys) {
+        const existing = sseHighlightTimeoutsRef.current.get(k);
+        if (existing) clearTimeout(existing);
+        const id = setTimeout(() => {
+          setRecentlyAddedSseKeys((prev) => {
+            if (!prev.has(k)) return prev;
+            const next = new Set(prev);
+            next.delete(k);
+            return next;
+          });
+          sseHighlightTimeoutsRef.current.delete(k);
+        }, 2500);
+        sseHighlightTimeoutsRef.current.set(k, id);
+      }
+    }
+    prevFilteredKeysRef.current = currentKeys;
+  }, [filteredNotes, datasetKey, myRecordsOnly]);
+
+  // 언마운트 시 SSE highlight 타이머 모두 정리 — 메모리 누수 + dangling setState 방지.
+  useEffect(() => {
+    const timeouts = sseHighlightTimeoutsRef.current;
+    return () => {
+      timeouts.forEach((id) => clearTimeout(id));
+      timeouts.clear();
+    };
+  }, []);
+
+  return (
+    <div
+      ref={scrollContainerRef}
+      className="flex-1 overflow-auto bg-surface-card min-h-0 relative text-body-base"
+    >
+      <div className="min-w-[800px] flex flex-col h-full">
+        {/* Header Row */}
+        <div className="grid grid-cols-[90px_1fr_70px_90px_140px] gap-4 px-4 py-1.5 bg-surface-hover border-b border-border-base text-body-sm font-bold text-content-secondary sticky top-0 z-20 tracking-tight shadow-sm">
+          <div className="border-r border-border-base pr-4 text-center">시간</div>
+          <div className="border-r border-border-base pr-4">기록 내용</div>
+          <div className="border-r border-border-base pr-4 text-center">구분</div>
+          <div className="border-r border-border-base pr-4 h-full flex items-center justify-center">기록자</div>
+          <div className="text-center">관리</div>
+        </div>
+
+        {/* Body */}
+        <div className="flex flex-col flex-1 pb-10">
+          {encounterId === null ? (
+            <EmptyState message="환자를 선택하면 간호 기록이 표시됩니다." />
+          ) : isPending ? (
+            <LoadingState />
+          ) : isError ? (
+            <EmptyState message="간호 기록을 불러오지 못했습니다." />
+          ) : (
+            <>
+              {filteredNotes.map((note, index) => {
+                const key = rowKey(note);
+                return (
+                  <React.Fragment key={key}>
+                    <BetweenRowAdd
+                      onClick={() => setInlineAddIndex(index)}
+                    />
+
+                    {inlineAddIndex === index && encounterId !== null && (
+                      <InlineAddForm
+                        encounterId={encounterId}
+                        currentUser={currentUser}
+                        date={date}
+                        prevOccurredAt={
+                          index > 0 ? filteredNotes[index - 1].occurredAt : null
+                        }
+                        nextOccurredAt={note.occurredAt}
+                        onClose={() => setInlineAddIndex(null)}
+                        onCreated={setPendingFocusId}
+                      />
+                    )}
+
+                    <NoteRow
+                      // isEditMode 토글 시 row 를 자연 remount 시켜 작성 중 draft state 도 같이 초기화 (사용자 의도).
+                      key={`${key}-${isEditMode ? "edit" : "view"}`}
+                      note={note}
+                      isEditMode={isEditMode}
+                      isHighlighted={highlightedKey === key}
+                      isRecentlySseAdded={recentlyAddedSseKeys.has(key)}
+                      onUpdateStt={handleUpdateStt}
+                      onUpdateMedication={handleUpdateMedication}
+                      onConfirm={handleConfirm}
+                      onDelete={handleDelete}
+                      pendingConfirmId={pendingConfirmId}
+                      pendingDeleteId={pendingDeleteId}
+                      pendingUpdateId={pendingUpdateId}
+                      rowRef={(element) => {
+                        if (element) itemRefs.current.set(key, element);
+                        else itemRefs.current.delete(key);
+                      }}
+                    />
+                  </React.Fragment>
+                );
+              })}
+
+              {/* 마지막 행 아래 */}
+              <BetweenRowAdd
+                onClick={() => setInlineAddIndex(filteredNotes.length)}
+              />
+              {inlineAddIndex === filteredNotes.length &&
+                encounterId !== null && (
+                  <InlineAddForm
+                    encounterId={encounterId}
+                    currentUser={currentUser}
+                    date={date}
+                    prevOccurredAt={
+                      filteredNotes.length > 0
+                        ? filteredNotes[filteredNotes.length - 1].occurredAt
+                        : null
+                    }
+                    nextOccurredAt={null}
+                    onClose={() => setInlineAddIndex(null)}
+                    onCreated={setPendingFocusId}
+                  />
+                )}
+
+              {filteredNotes.length === 0 &&
+                inlineAddIndex !== filteredNotes.length && (
+                  <EmptyState
+                    message={
+                      (data?.length ?? 0) === 0
+                        ? "등록된 간호 기록이 없습니다."
+                        : "필터 조건에 맞는 기록이 없습니다."
+                    }
+                    onAdd={
+                      encounterId !== null
+                        ? () => setInlineAddIndex(filteredNotes.length)
+                        : undefined
+                    }
+                  />
+                )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function rowKey(note: NursingNoteItem): string {
+  return note.type === "STT_NOTE"
+    ? `stt-${note.nursingRecordId}`
+    : `med-${note.taggingId}`;
+}
+
+// "yyyy-MM-ddTHH:mm:ss" 로컬 ISO (타임존/밀리초 없음). 백엔드 confirmedAt 포맷.
+function formatLocalIsoDateTime(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+// 인라인 추가 시 기본 confirmedAt 결정 — 사용자가 클릭한 위치에 가까운 결정적 시각.
+// 사용자가 InlineAddForm 의 TimeInput 으로 변경 가능. (옛 구현은 prev/next 사이 uniform random 이라
+// 맨 위/맨 아래 클릭 시 엉뚱한 시각이 나오던 문제를 해결.)
+// - 두 기록 사이: prev/next 의 midpoint
+// - 맨 위 (next 만 있음): next - 1분 (cap selectedDate 00:00)
+// - 맨 아래 + 오늘: 서버 현재 시각
+// - 맨 아래 + 다른 날짜: prev + 1분 (cap selectedDate 23:59:59)
+// - 빈 목록 + 오늘: 서버 현재 시각
+// - 빈 목록 + 다른 날짜: 12:00 정오
+function computeNewConfirmedAt(
+  selectedDate: string,
+  prevOccurredAt: string | null,
+  nextOccurredAt: string | null,
+): string {
+  const todayIso = toIsoDate(new Date());
+  const dayStartMs = new Date(`${selectedDate}T00:00:00`).getTime();
+  const dayEndMs = new Date(`${selectedDate}T23:59:59`).getTime();
+
+  if (prevOccurredAt && nextOccurredAt) {
+    const midMs = Math.floor(
+      (new Date(prevOccurredAt).getTime() +
+        new Date(nextOccurredAt).getTime()) /
+        2,
+    );
+    return formatLocalIsoDateTime(new Date(midMs));
+  }
+
+  if (prevOccurredAt) {
+    if (selectedDate === todayIso) {
+      return formatLocalIsoDateTime(new Date());
+    }
+    const targetMs = Math.min(
+      new Date(prevOccurredAt).getTime() + 60_000,
+      dayEndMs,
+    );
+    return formatLocalIsoDateTime(new Date(targetMs));
+  }
+
+  if (nextOccurredAt) {
+    const targetMs = Math.max(
+      new Date(nextOccurredAt).getTime() - 60_000,
+      dayStartMs,
+    );
+    return formatLocalIsoDateTime(new Date(targetMs));
+  }
+
+  // 빈 목록
+  if (selectedDate === todayIso) {
+    return formatLocalIsoDateTime(new Date());
+  }
+  return `${selectedDate}T12:00:00`;
+}
+
+// ISO datetime 의 HH:mm 만 새 값으로 교체 (날짜/초/타임존 보존).
+function replaceTimeInIso(originalIso: string, hhmm: string): string {
+  const tIndex = originalIso.indexOf("T");
+  if (tIndex === -1) return `${originalIso}T${hhmm}:00`;
+  return (
+    originalIso.substring(0, tIndex + 1) + hhmm + originalIso.substring(tIndex + 6)
+  );
+}
+
+// "H:m" / "1:" / "" 등 부분 입력을 "HH:mm" 으로 정규화. 숫자 외 또는 공란 → "00".
+function normalizeHHmm(value: string): string {
+  const [hRaw, mRaw] = value.split(":");
+  const h = (hRaw ?? "").padStart(2, "0") || "00";
+  const m = (mRaw ?? "").padStart(2, "0") || "00";
+  return `${h}:${m}`;
+}
+
+function TimeInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [hour, minute] = (() => {
+    const parts = value.split(":");
+    return [parts[0] ?? "", parts[1] ?? ""];
+  })();
+
+  const update = (h: string, m: string) => {
+    onChange(`${h}:${m}`);
+  };
+
+  // display 모드 시간 셀 (`text-[15px] font-extrabold leading-[1.6]`) 과 글자 크기/높이 동일하게.
+  // 너비는 글자 2자 폭에 맞춰 좁게 — w-9 처럼 넓으면 가운데 정렬에서 양 끝으로 벌어져 보임.
+  const cellClass =
+    "w-6 text-center bg-transparent focus:outline-none tabular-nums font-bold text-[15px] leading-[1.6] text-content-primary";
+
+  return (
+    <div className="flex items-center justify-center gap-0.5 w-full border border-border-base rounded bg-white focus-within:ring-1 focus-within:ring-content-primary/20">
+      <input
+        type="text"
+        inputMode="numeric"
+        maxLength={2}
+        value={hour}
+        placeholder="HH"
+        onFocus={(event) => event.target.select()}
+        onChange={(event) => {
+          const digits = event.target.value.replace(/\D/g, "");
+          if (digits.length > 0 && parseInt(digits, 10) > 23) return;
+          update(digits, minute);
+        }}
+        onBlur={() => update(hour ? hour.padStart(2, "0") : "00", minute)}
+        className={cellClass}
+      />
+      <span className="tabular-nums font-bold text-[15px] leading-[1.6] text-content-muted">:</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        maxLength={2}
+        value={minute}
+        placeholder="mm"
+        onFocus={(event) => event.target.select()}
+        onChange={(event) => {
+          const digits = event.target.value.replace(/\D/g, "");
+          if (digits.length > 0 && parseInt(digits, 10) > 59) return;
+          update(hour, digits);
+        }}
+        onBlur={() => update(hour, minute ? minute.padStart(2, "0") : "00")}
+        className={cellClass}
+      />
+    </div>
+  );
+}
+
+function BetweenRowAdd({ onClick }: { onClick: () => void }) {
+  return (
+    <div className="relative group/between h-0 z-30">
+      <div
+        className="absolute inset-x-0 -top-2 h-4 flex items-center justify-center opacity-0 group-hover/between:opacity-100 transition-opacity cursor-pointer overflow-visible"
+        onClick={onClick}
+      >
+        <div className="w-full h-[1px] bg-brand-primary/20" />
+        <div className="absolute size-5 rounded-full bg-brand-primary text-white flex items-center justify-center shadow-sm hover:scale-110 transition-transform">
+          <Plus className="size-3.5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InlineAddForm({
+  encounterId,
+  currentUser,
+  date,
+  prevOccurredAt,
+  nextOccurredAt,
+  onClose,
+  onCreated,
+}: {
+  encounterId: number;
+  currentUser: string;
+  // 현재 NursingTab 의 selectedDate (yyyy-MM-dd) — 오늘인지 판별 + fallback 경계 계산용.
+  date: string;
+  // 삽입 위치 기준의 이전/다음 기록 시각 (ISO datetime). 끝이면 null.
+  prevOccurredAt: string | null;
+  nextOccurredAt: string | null;
+  onClose: () => void;
+  // 생성 성공 시 새 기록의 nursingRecordId 보고 — 부모가 scroll + 강조 처리.
+  onCreated?: (nursingRecordId: number) => void;
+}) {
+  const [content, setContent] = useState("");
+  const createMutation = useCreateNursingRecord(encounterId);
+
+  // 폼 마운트 시점에 기본 시각 결정 — selectedDate + 사용자가 수정한 HH:mm 으로 submit.
+  // plannedConfirmedAt 은 ISO base (selectedDate + 결정된 시각), draftHHmm 은 사용자 입력 HH:mm.
+  const [plannedConfirmedAt] = useState<string>(() =>
+    computeNewConfirmedAt(date, prevOccurredAt, nextOccurredAt),
+  );
+  const [draftHHmm, setDraftHHmm] = useState<string>(() =>
+    formatHHmm(plannedConfirmedAt),
+  );
+
+  const handleSubmit = () => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    const normalizedTime = normalizeHHmm(draftHHmm);
+    const finalConfirmedAt = replaceTimeInIso(plannedConfirmedAt, normalizedTime);
+    createMutation.mutate(
+      {
+        encounterId,
+        content: trimmed,
+        confirmedAt: finalConfirmedAt,
+      },
+      {
+        onSuccess: (response) => {
+          onCreated?.(response.nursingRecordId);
+          setContent("");
+          onClose();
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="grid grid-cols-[90px_1fr_70px_90px_140px] gap-4 px-4 py-2 border-y border-brand-primary/10 bg-brand-surface/30 items-center shadow-inner">
+      <div className="py-1">
+        <TimeInput value={draftHHmm} onChange={setDraftHHmm} />
+      </div>
+      <div className="pr-4">
+        <textarea
+          autoFocus
+          placeholder="새 간호 기록 본문을 입력하세요..."
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          rows={1}
+          className="w-full bg-white border border-brand-primary/10 rounded px-2 py-1.5 text-body-sm focus:outline-none focus:ring-1 focus:ring-brand-primary/20 transition-all resize-none shadow-xs"
+        />
+      </div>
+      <div className="text-center text-body-xs font-semibold text-content-tertiary">
+        {NOTE_TYPE_LABEL.STT_NOTE}
+      </div>
+      <div className="text-body-sm text-content-tertiary font-bold truncate text-center">
+        {currentUser}
+      </div>
+      <div className="flex gap-1 justify-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2.5 text-body-micro font-bold"
+          onClick={handleSubmit}
+          disabled={createMutation.isPending || !content.trim()}
+        >
+          {createMutation.isPending ? "추가 중..." : "추가"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2.5 text-body-micro font-bold"
+          onClick={() => {
+            setContent("");
+            onClose();
+          }}
+        >
+          취소
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function NoteRow({
+  note,
+  isEditMode,
+  isHighlighted,
+  isRecentlySseAdded,
+  onUpdateStt,
+  onUpdateMedication,
+  onConfirm,
+  onDelete,
+  pendingConfirmId,
+  pendingDeleteId,
+  pendingUpdateId,
+  rowRef,
+}: {
+  note: NursingNoteItem;
+  // 편집 모드 (수정/삭제 노출 여부). false 면 draft 행의 "확정"만.
+  isEditMode: boolean;
+  // 사이드바 / 인수인계 citation 에서 점프해 온 row 잠시 강조 (NursingTab 에서 2.5초 후 해제).
+  isHighlighted: boolean;
+  // SSE 도착으로 새로 추가된 행 잠시 강조 (NursingTab 에서 2.5초 후 해제). focus 점프와 시각 구분 — primary 색.
+  isRecentlySseAdded?: boolean;
+  rowRef?: (element: HTMLDivElement | null) => void;
+} & NoteRowCallbacks) {
+  const isMedication = note.type === "MEDICATION";
+  // 구분 라벨 — MEDICATION 은 ivRateMlPerHr 유무로 IV(수액) / NFC 알약(약물) 분기 (모바일과 일관).
+  // 색: 약물=success 그린, 수액=brand-primary 네이비, 음성=content-tertiary 그레이.
+  const isIvGroup =
+    note.type === "MEDICATION"
+    && note.medications.some((m) => m.ivRateMlPerHr !== undefined);
+  const typeLabel = note.type === "MEDICATION"
+    ? (isIvGroup ? "수액" : "약물")
+    : NOTE_TYPE_LABEL[note.type];
+  const typeTone = note.type === "MEDICATION"
+    ? (isIvGroup ? "text-brand-primary" : "text-status-success")
+    : NOTE_TYPE_TONE[note.type];
+
+  // STT_NOTE: content + occurredAt / MEDICATION: dosageQuantity + confirmedAt
+  // 헤더 "편집" 토글 변화 시 NoteRow 가 key 변경으로 remount 되므로 isEditing 도 자연 초기화됨.
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState("");
+  const [draftTime, setDraftTime] = useState(""); // "HH:mm" 형식
+  const [medicationDrafts, setMedicationDrafts] = useState<
+    Record<number, number>
+  >({});
+
+  const ownItemId = note.type === "STT_NOTE" ? note.nursingRecordId : note.taggingId;
+  const isUpdating = pendingUpdateId === ownItemId;
+
+  const startEdit = () => {
+    setDraftTime(formatHHmm(note.occurredAt));
+    if (note.type === "STT_NOTE") {
+      setDraftContent(note.content);
+    } else {
+      setMedicationDrafts(
+        Object.fromEntries(
+          note.medications.map((medication) => [
+            medication.medicationAdminId,
+            medication.dosageQuantity,
+          ]),
+        ),
+      );
+    }
+    setIsEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setIsEditing(false);
+    setDraftContent("");
+    setDraftTime("");
+    setMedicationDrafts({});
+  };
+
+  const submitEdit = () => {
+    const originalTime = formatHHmm(note.occurredAt);
+    const normalizedTime = normalizeHHmm(draftTime);
+    const timeChanged = normalizedTime !== originalTime;
+    const newOccurredAt = timeChanged
+      ? replaceTimeInIso(note.occurredAt, normalizedTime)
+      : null;
+
+    if (note.type === "STT_NOTE") {
+      const trimmed = draftContent.trim();
+      const contentChanged = trimmed !== note.content;
+      if (!trimmed) return;
+      if (!contentChanged && !timeChanged) {
+        cancelEdit();
+        return;
+      }
+      onUpdateStt(
+        note.nursingRecordId,
+        {
+          ...(contentChanged ? { content: trimmed } : {}),
+          // 백엔드 명세상 시간 필드는 confirmedAt — UI 의 시간 컬럼이 confirmedAt 에 매핑됨.
+          ...(newOccurredAt ? { confirmedAt: newOccurredAt } : {}),
+        },
+        {
+          onSuccess: () => {
+            setIsEditing(false);
+            setDraftContent("");
+            setDraftTime("");
+          },
+        },
+      );
+      return;
+    }
+    // MEDICATION — 변경된 약물(약별 1회 투여량) + 그룹 시각(confirmedAt).
+    const changedMeds = note.medications
+      .filter(
+        (medication) =>
+          medicationDrafts[medication.medicationAdminId] !== undefined &&
+          medicationDrafts[medication.medicationAdminId] !==
+            medication.dosageQuantity,
+      )
+      .map((medication) => ({
+        medicationAdminId: medication.medicationAdminId,
+        dosageQuantity: medicationDrafts[medication.medicationAdminId],
+      }));
+    if (changedMeds.length === 0 && !timeChanged) {
+      cancelEdit();
+      return;
+    }
+    onUpdateMedication(
+      note.taggingId,
+      {
+        ...(changedMeds.length > 0 ? { medications: changedMeds } : {}),
+        ...(newOccurredAt ? { confirmedAt: newOccurredAt } : {}),
+      },
+      {
+        onSuccess: () => {
+          setIsEditing(false);
+          setDraftTime("");
+          setMedicationDrafts({});
+        },
+      },
+    );
+  };
+
+  return (
+    <div
+      ref={rowRef}
+      className={cn(
+        "grid grid-cols-[90px_1fr_70px_90px_140px] gap-4 px-4 py-2 min-h-[40px] border-b border-border-base/50 items-center hover:bg-surface-hover/60 transition-[background-color,box-shadow] duration-500 relative",
+        // 우선순위: medication > draft > isEditing (마지막 매치가 이김)
+        // draft 는 hover 도 같은 톤으로 고정 — 임시 기록이라 hover 강조 의미 없음. 좌측 3px accent 로 임시상태 시각화.
+        note.status === "draft" &&
+          "bg-[#f8f3ef] hover:bg-[#f8edd7] border-l-[3px] border-l-status-warning",
+        note.type === "MEDICATION" && "bg-brand-surface/30",
+        isEditing && "bg-brand-surface/30",
+        // highlighted — 사이드바/인수인계에서 점프해 온 행 잠시 강조. inset shadow 로 외곽 ring 효과.
+        isHighlighted &&
+          "bg-status-warning-surface hover:bg-status-warning-surface shadow-[inset_0_0_0_2px_var(--color-status-warning)]",
+        // SSE 도착으로 새로 추가된 행 — primary 색 ring (focus 점프 warning 과 시각 구분, 의도 다른 두 효과).
+        // focus 점프와 동시에 두 조건이 켜지면 focus 가 우선 (사용자가 명시 클릭한 거라 warning ring 보존).
+        !isHighlighted && isRecentlySseAdded &&
+          "shadow-[inset_0_0_0_2px_var(--color-brand-primary)]",
+      )}
+    >
+      {/* 시간 — 편집 모드에선 HH : mm 분리 입력. STT_NOTE / MEDICATION 모두 body 의 confirmedAt 키로 송신. */}
+      <div className="py-1 border-r border-border-base/50 pr-4 min-w-0">
+        {isEditing ? (
+          <TimeInput value={draftTime} onChange={setDraftTime} />
+        ) : (
+          <div className="w-full text-center tabular-nums font-bold text-[15px] text-content-primary leading-[1.6]">
+            {formatHHmm(note.occurredAt)}
+          </div>
+        )}
+      </div>
+
+      {/* 기록 내용 */}
+      <div className="min-w-0 pr-6 border-r border-border-base/50 py-1 relative">
+        {isMedication ? (
+          <MedicationContent
+            note={note}
+            isEditing={isEditing}
+            drafts={medicationDrafts}
+            onChangeDraft={(medicationAdminId, value) =>
+              setMedicationDrafts((prev) => ({
+                ...prev,
+                [medicationAdminId]: value,
+              }))
+            }
+          />
+        ) : isEditing && note.type === "STT_NOTE" ? (
+          <div className="flex flex-col">
+            <textarea
+              autoFocus
+              value={draftContent}
+              onChange={(event) => setDraftContent(event.target.value)}
+              ref={(element) => {
+                if (element) {
+                  element.style.height = "auto";
+                  element.style.height = `${element.scrollHeight}px`;
+                }
+              }}
+              onInput={(event) => {
+                const target = event.currentTarget;
+                target.style.height = "auto";
+                target.style.height = `${target.scrollHeight}px`;
+              }}
+              className="w-full bg-white border border-brand-primary/30 rounded px-2 py-1 text-body-base leading-[1.6] text-content-primary resize-none focus:outline-none focus:ring-1 focus:ring-brand-primary/20 shadow-xs"
+              rows={1}
+            />
+            <QuickCorrectionPanel
+              nursingRecordId={note.nursingRecordId}
+              content={note.content}
+              onApply={(start, end, replaced, original) => {
+                // 첫 적용 (draftContent === note.content) 은 원본 인덱스 기준 정확 치환.
+                // 그 이후 적용은 draftContent 가 이미 변경된 상태라 currentWord(original)을 첫 매치로 replace.
+                // currentWord 는 QuickCorrectionPanel 이 칩별 마지막 적용 단어를 추적하므로
+                // "사무실 → 3호실" 후 "3호실 → 사무실" 토글 시에도 정확히 동작한다.
+                const next =
+                  draftContent === note.content
+                    ? note.content.slice(0, start) +
+                      replaced +
+                      note.content.slice(end)
+                    : draftContent.replace(original, replaced);
+                setDraftContent(next);
+              }}
+            />
+          </div>
+        ) : (
+          <SttContent content={note.content} />
+        )}
+      </div>
+
+      {/* 구분 */}
+      <div className="h-full flex items-center justify-center border-r border-border-base/50 pr-4">
+        <span
+          className={cn(
+            "text-body-xs font-semibold",
+            typeTone ?? "text-content-tertiary",
+          )}
+        >
+          {typeLabel ?? note.type}
+        </span>
+      </div>
+
+      {/* 기록자 */}
+      <div className="text-[16px] text-content-tertiary truncate h-full border-r border-border-base/50 pr-4 flex items-center justify-center">
+        <span className="truncate font-semibold">{note.authorName}</span>
+      </div>
+
+      {/* 동작 — 확정은 위, 수정/삭제는 아래 줄 */}
+      <div className="h-full flex flex-col items-center justify-center gap-1">
+        {note.editable ? (
+          isEditing ? (
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2.5 text-[14px] font-Bold border border-gray-300 rounded-md"
+                disabled={
+                  isUpdating || (!isMedication && !draftContent.trim())
+                }
+                onClick={submitEdit}
+              >
+                {isUpdating ? "저장 중..." : "완료"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2.5 text-[14px] font-Bold border border-gray-300 rounded-md"
+                onClick={cancelEdit}
+              >
+                취소
+              </Button>
+            </div>
+          ) : isMedication ? (
+            <MedicationActions
+              note={note}
+              isEditMode={isEditMode}
+              onStartEdit={startEdit}
+              onConfirm={onConfirm}
+              onDelete={onDelete}
+              isConfirming={pendingConfirmId === note.taggingId}
+              isDeleting={pendingDeleteId === note.taggingId}
+            />
+          ) : (
+            <SttNoteActions
+              note={note as Extract<NursingNoteItem, { type: "STT_NOTE" }>}
+              isEditMode={isEditMode}
+              onStartEdit={startEdit}
+              onConfirm={onConfirm}
+              onDelete={onDelete}
+              isConfirming={
+                pendingConfirmId ===
+                (note as Extract<NursingNoteItem, { type: "STT_NOTE" }>)
+                  .nursingRecordId
+              }
+              isDeleting={
+                pendingDeleteId ===
+                (note as Extract<NursingNoteItem, { type: "STT_NOTE" }>)
+                  .nursingRecordId
+              }
+            />
+          )
+        ) : (
+          <span className="text-body-micro text-content-muted">-</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SttNoteActions({
+  note,
+  isEditMode,
+  onStartEdit,
+  onConfirm,
+  onDelete,
+  isConfirming,
+  isDeleting,
+}: {
+  note: Extract<NursingNoteItem, { type: "STT_NOTE" }>;
+  isEditMode: boolean;
+  onStartEdit: () => void;
+  onConfirm: (itemId: number | string) => void;
+  onDelete: (itemId: number | string) => void;
+  isConfirming: boolean;
+  isDeleting: boolean;
+}) {
+  return (
+    <>
+      {note.status === "draft" && !isEditMode && (
+        <ConfirmButton
+          onClick={() => onConfirm(note.nursingRecordId)}
+          disabled={isConfirming}
+        />
+      )}
+      {isEditMode && (
+        <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-[14px] font-Bold border border-gray-300 rounded-md"
+            onClick={onStartEdit}
+          >
+            수정
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-[14px] font-Bold border border-gray-300 rounded-md"
+            disabled={isDeleting}
+            onClick={() => {
+              if (window.confirm("이 기록을 삭제하시겠습니까?")) {
+                onDelete(note.nursingRecordId);
+              }
+            }}
+          >
+            삭제
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function MedicationActions({
+  note,
+  isEditMode,
+  onStartEdit,
+  onConfirm,
+  onDelete,
+  isConfirming,
+  isDeleting,
+}: {
+  note: Extract<NursingNoteItem, { type: "MEDICATION" }>;
+  isEditMode: boolean;
+  onStartEdit: () => void;
+  onConfirm: (itemId: number | string) => void;
+  onDelete: (itemId: number | string) => void;
+  isConfirming: boolean;
+  isDeleting: boolean;
+}) {
+  // IV 그룹은 워치에서 시작/속도 변경/종료로만 다뤄야 함 — 간호기록 화면에서 수정/삭제 모두 차단.
+  // BE editable 은 "작성자 본인" 여부만 보므로 IV 차단은 FE 책임.
+  const isIvGroup = note.medications.some(
+    (medication) => medication.ivRateMlPerHr !== undefined,
+  );
+  return (
+    <>
+      {note.status === "draft" && !isEditMode && (
+        <ConfirmButton
+          onClick={() => onConfirm(note.taggingId)}
+          disabled={isConfirming}
+        />
+      )}
+      {isEditMode && !isIvGroup && (
+        <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-[14px] font-Bold border border-gray-300 rounded-md"
+            onClick={onStartEdit}
+          >
+            수정
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-[14px] font-Bold border border-gray-300 rounded-md"
+            disabled={isDeleting}
+            onClick={() => {
+              if (window.confirm("이 투약 기록을 삭제하시겠습니까?")) {
+                onDelete(note.taggingId);
+              }
+            }}
+          >
+            삭제
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ConfirmButton({
+  onClick,
+  disabled,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 px-2.5 font-Bold border border-gray-300 rounded-md"
+      onClick={onClick}
+      disabled={disabled}
+    >
+      확정
+    </Button>
+  );
+}
+
+function SttContent({ content }: { content: string }) {
+  return (
+    <div className="text-body-base font-medium leading-[1.6] text-content-primary whitespace-pre-wrap break-all">
+      {content}
+    </div>
+  );
+}
+
+function MedicationContent({
+  note,
+  isEditing,
+  drafts,
+  onChangeDraft,
+}: {
+  note: Extract<NursingNoteItem, { type: "MEDICATION" }>;
+  isEditing: boolean;
+  drafts: Record<number, number>;
+  onChangeDraft: (medicationAdminId: number, value: number) => void;
+}) {
+  return (
+    <ul className="flex flex-col gap-1">
+      {note.medications.map((medication) => (
+        <MedicationRow
+          key={medication.medicationAdminId}
+          medication={medication}
+          isEditing={isEditing}
+          draftValue={drafts[medication.medicationAdminId]}
+          onChangeDraft={(value) =>
+            onChangeDraft(medication.medicationAdminId, value)
+          }
+        />
+      ))}
+    </ul>
+  );
+}
+
+function MedicationRow({
+  medication,
+  isEditing,
+  draftValue,
+  onChangeDraft,
+}: {
+  medication: MedicationItem;
+  isEditing: boolean;
+  draftValue: number | undefined;
+  onChangeDraft: (value: number) => void;
+}) {
+  return (
+    <li className="flex flex-col gap-0.5">
+      <div className="flex items-baseline gap-2 min-w-0">
+        <span className="font-medium text-content-primary text-body-base truncate">
+          {medication.productName}
+        </span>
+        <span className="tabular-nums text-body-micro text-content-muted shrink-0">
+          {medication.productCode}
+        </span>
+      </div>
+      <div className="flex items-baseline gap-1.5 text-body-xs">
+        {isEditing ? (
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="any"
+            value={draftValue ?? medication.dosageQuantity}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              if (!Number.isFinite(next) || next < 0) return;
+              onChangeDraft(next);
+            }}
+            className="w-16 px-1.5 py-0.5 rounded bg-white border border-brand-primary/40 tabular-nums font-bold text-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/30"
+          />
+        ) : (
+          <span className="tabular-nums font-bold text-brand-primary">
+            {medication.dosageQuantity}
+          </span>
+        )}
+        <span className="text-content-tertiary font-medium">{medication.dosageUnit}</span>
+        <span className="text-border-base">·</span>
+        <span className="tabular-nums font-bold text-content-primary">{medication.frequency}</span>
+        <span className="text-content-tertiary">회</span>
+        <span className="text-border-base">·</span>
+        <span className="font-bold text-content-secondary">{medication.route}</span>
+        {medication.ivRateMlPerHr !== undefined && (
+          <>
+            <span className="text-border-base">·</span>
+            <span className="tabular-nums font-bold text-brand-primary">
+              {medication.ivRateMlPerHr}
+            </span>
+            <span className="text-content-tertiary font-medium">mL/hr</span>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function EmptyState({
+  message,
+  onAdd,
+}: {
+  message: string;
+  // 제공 시 메시지 아래 "새 기록 추가" 버튼 노출 — 빈 목록에서 BetweenRowAdd hover 영역 발견 어려움 보완.
+  onAdd?: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center flex-1 gap-4 py-16 text-content-muted">
+      <p className="text-body-base font-bold">{message}</p>
+      {onAdd && (
+        // 흰 배경 + content-primary 텍스트 — NursingTab 행 액션 버튼(ghost) 의 글자색과 통일.
+        <Button type="button" variant="neutral" size="default" onClick={onAdd}>
+          새 기록 추가
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="flex flex-col items-center justify-center flex-1 gap-2 py-16 text-content-muted">
+      <Loader2 className="w-6 h-6 animate-spin opacity-60" />
+      <p className="text-body-sm">불러오는 중...</p>
+    </div>
+  );
+}
