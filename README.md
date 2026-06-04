@@ -2,11 +2,9 @@
 
 <!-- 로고/배너 이미지 영역 -->
 <!-- 여기에 프로젝트 로고 또는 배너 이미지를 넣어주세요 -->
-<img src="./image/banner/해피너스_최종배너.png" alt="HappyNurse 로고" width="600"/>
+<img src="./image/banner/해피너스_최종배너.png" alt="HappyNurse 로고" width="500"/>
 
 # HappyNurse
-
----
 
 ### 🏆 SSAFY 자율 프로젝트 우수상 수상
 
@@ -30,11 +28,11 @@
 
 <br/>
 
-### SSAFY 자율 프로젝트 · 6인 팀 · 8주 진행
+#### SSAFY 자율 프로젝트 · 6인 팀 · 8주 진행
 
-### 개발 기간 : 2026.04.14 ~ 2026.05.22
+#### 개발 기간 : 2026.04.14 ~ 2026.05.22
 
-### 플랫폼: Web & Android App & Watch App
+#### 플랫폼: Web & Android App & Watch App
 
 </div>
 
@@ -42,15 +40,20 @@
 
 ## 📑 목차
 
-<h3>1. <a href="#1-프로젝트-소개">프로젝트 소개</a></h3>
-<h3>2. <a href="#2-기획-배경">기획 배경</a></h3>
-<h3>3. <a href="#3-주요-기능">주요 기능</a></h3>
-<h3>4. <a href="#4-팀원-소개">팀원 소개</a></h3>
-<h3>5. <a href="#5-기술-스택">기술 스택</a></h3>
-<h3>6. <a href="#6-시스템-아키텍처">시스템 아키텍처</a></h3>
-<h3>7. <a href="#7-erd">ERD</a></h3>
-<h3>8. <a href="#8-프로젝트-구조">프로젝트 구조</a></h3>
-<h3>9. <a href="#9-영상-포트폴리오">영상 포트폴리오</a></h3>
+<div align="center">
+
+<a href="#1-프로젝트-소개">🏥 프로젝트 소개</a> &nbsp;·&nbsp;
+<a href="#2-기획-배경">💡 기획 배경</a> &nbsp;·&nbsp;
+<a href="#3-주요-기능">✨ 주요 기능</a> &nbsp;·&nbsp;
+<a href="#4-팀원-소개">👥 팀원 소개</a> &nbsp;·&nbsp;
+<a href="#5-기술-스택">🛠 기술 스택</a>
+<br/>
+<a href="#6-시스템-아키텍처">🏗 시스템 아키텍처</a> &nbsp;·&nbsp;
+<a href="#7-erd">🗄 ERD</a> &nbsp;·&nbsp;
+<a href="#8-프로젝트-구조">📂 프로젝트 구조</a> &nbsp;·&nbsp;
+<a href="#9-영상-포트폴리오">🎬 영상 포트폴리오</a>
+
+</div>
 
 <br/>
 
@@ -65,7 +68,7 @@ NFC 태깅으로 환자와 약물을 즉시 인식하고, 음성(STT)으로 간�
 <!-- 프로젝트 대표 GIF 또는 메인 화면 이미지 영역 -->
 <!-- 여기에 프로젝트 전체를 보여주는 대표 GIF를 넣어주세요 -->
 <div align="center">
-<img src="./image/슬라이드25.PNG"/>
+<img src="./image/슬라이드25.PNG"  height="420" />
 </div>
 
 <br/>
@@ -95,8 +98,18 @@ HappyNurse는 다음 문제를 해결하고자 합니다.
 
 <!-- 기능 시연 GIF 영역 -->
 <div align="center">
-  <img src="./image/간호일지.png" height="420" style="margin: 10px"/>
-  <img src="./image/앱간호일지.gif" height="420" style="margin: 10px"/>
+
+<table>
+  <tr>
+    <th>Web</th>
+    <th>App</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="./image/간호일지.png" width="750"/></td>
+    <td align="center"><img src="./image/앱간호일지.gif" width="180"/></td>
+  </tr>
+</table>
+
 </div>
 
 <br/>
@@ -107,32 +120,110 @@ HappyNurse는 다음 문제를 해결하고자 합니다.
 
 <!-- 기능 시연 GIF 영역 -->
 <div align="center">
-  <img src="./image/인수인계.png" width="700" style="margin: 10px"/>
-  <img src="./image/앱인수인계.gif" width="240" style="margin: 10px"/>
+
+<table>
+  <tr>
+    <th>Web</th>
+    <th>App</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="./image/인수인계.png" width="750"/></td>
+    <td align="center"><img src="./image/앱인수인계.gif" width="180"/></td>
+  </tr>
+</table>
+
 </div>
 
 <br/>
 
-### 음성(STT) 간호일지 작성
+### 음성(STT) 간호일지 자동화 (App)
 
-<p align="center">음성으로 간호 기록을 녹음하면 STT로 자동 변환되고, AI 교정 사전이 의료 용어 오인식을 보정합니다. 작성된 기록은 웹으로 전송되어 검토 후 확정됩니다.</p>
+<p align="center">앱에서 마이크 버튼으로 간호 기록을 음성으로 녹음하면 CLOVA Speech STT가 텍스트로 변환합니다. 형태소 분석(Kiwi)과 의료 용어 교정 사전이 오인식된 용어를 자동 보정하며, 변환된 기록은 '확정 전' 상태로 저장되어 웹에서 검토·확정합니다.</p>
 
 <!-- 기능 시연 GIF 영역 -->
 <div align="center">
-  <img src="./image/간호일지stt.gif" width="300" style="margin: 10px; vertical-align: middle"/>
-  <img src="./image/워치stt.gif" width="300" style="margin: 10px; vertical-align: middle"/>
+
+<table>
+  <tr>
+    <th>음성 녹음 · STT 변환</th>
+    <th>간호일지에 확정 전으로 등록</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="./image/간호일지stt.gif" width="260"/></td>
+    <td align="center"><img src="./image/stt_app.jpg" width="260"/></td>
+  </tr>
+</table>
+
+</div>
+
+<br/>
+
+### 음성(STT) 타이머 설정 (Watch)
+
+<p align="center">양손이 자유롭지 못한 간호 업무 중에도 손목 제스처(더블 스냅)로 녹음을 시작해 음성으로 타이머를 설정합니다. 'N분 뒤', '오전/오후 H시 M분' 등 시간 표현을 파싱해 예약 시각을 인식하고, 사용자가 확인·조정한 뒤 알림을 등록합니다. 설정한 시각이 되면 워치 알림과 TTS 음성으로 안내합니다.</p>
+
+<!-- 기능 시연 GIF 영역 -->
+<div align="center">
+
+<table>
+  <tr>
+    <th>손목 제스처</th>
+    <th>음성 타이머 설정</th>
+    <th>타이머 알림</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="./image/워치제스처.gif" width="220"/></td>
+    <td align="center"><img src="./image/워치stt_원형.png" width="220"/></td>
+    <td align="center"><img src="./image/stt_watch.png" width="220"/></td>
+  </tr>
+</table>
+
 </div>
 
 <br/>
 
 ### NFC 기반 환자·약물 인식
 
-<p align="center">환자 팔찌를 태깅하면 환자 정보가 즉시 표시되고, 약물 NFC 태그로 투약 내역을 검증·기록합니다.</p>
+<p align="center">간호사 앱에서 환자 팔찌를 NFC로 태깅해 환자 신원을 즉시 확인하고, 약물 NFC 태그로 투약 내역을 검증·기록합니다.</p>
 
 <!-- 기능 시연 GIF 영역 -->
 <div align="center">
-  <img src="./image/환자팔찌.gif" width="300" style="margin: 10px"/>
-  <img src="./image/약물태깅.gif" width="300" style="margin: 10px"/>
+
+<table>
+  <tr>
+    <th>간호사 앱 환자 확인</th>
+    <th>약물 NFC 태깅 확인</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="./image/환자팔찌태깅앱.jpg" width="260"/></td>
+    <td align="center"><img src="./image/약물태깅.gif" width="260"/></td>
+  </tr>
+</table>
+
+</div>
+
+<br/>
+
+### 환자 웹앱 — 증상 요청 & AI 긴급도 분류
+
+<p align="center">환자가 자신의 NFC 팔찌를 태깅하면 환자 전용 웹앱이 열립니다. 이름·생년월일로 본인 인증 후 통증·화장실·드레싱·수액·체위 변경·호흡 불편 등 빠른 증상 버튼이나 음성·텍스트로 간호사에게 도움을 요청합니다. AI가 환자의 진료과·수술·진단·재원 경과(POD) 맥락과 증상을 함께 분석해 긴급도(긴급·높음·보통·낮음)를 분류하고, '긴급' 요청은 담당 간호사의 앱·워치로 즉시 알림을 전달합니다.</p>
+
+<!-- 기능 시연 GIF 영역 -->
+<div align="center">
+
+<table>
+  <tr>
+    <th>환자 NFC → 웹앱 진입</th>
+    <th>증상 · 도움 요청</th>
+    <th>긴급 알림 (Watch)</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="./image/환자팔찌.gif" width="240"/></td>
+    <td align="center"><img src="./image/환자도움요청.gif" width="240"/></td>
+    <td align="center"><img src="./image/긴급알림_원형.png" width="220"/></td>
+  </tr>
+</table>
+
 </div>
 
 <br/>
@@ -143,32 +234,42 @@ HappyNurse는 다음 문제를 해결하고자 합니다.
 
 <!-- 기능 시연 GIF 영역 -->
 <div align="center">
-  <img src="./image/수액타이머설정.gif" width="300" style="margin: 10px"/>
-  <img src="./image/수액실시간.gif" width="300" style="margin: 10px"/>
+
+<table>
+  <tr>
+    <th>수액 타이머 설정</th>
+    <th>실시간 잔량 모니터링</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="./image/수액타이머설정.gif" width="260"/></td>
+    <td align="center"><img src="./image/수액실시간.gif" width="260"/></td>
+  </tr>
+</table>
+
 </div>
 
 <br/>
 
 ### 실시간 알림
 
-<p align="center">환자 호출, 처방 변경, 투약 시각 등 주요 이벤트를 앱·워치로 즉시 전달합니다. FCM 푸시와 SSE 스트리밍을 결합해 알림 지연을 최소화합니다.</p>
+<p align="center">환자 호출, 처방 변경, 투약 시각 등 주요 이벤트를 웹·앱·워치로 즉시 전달합니다. FCM 푸시와 SSE 스트리밍을 결합해 알림 지연을 최소화합니다.</p>
 
 <!-- 기능 시연 GIF 영역 -->
 <div align="center">
-  <img src="./image/웹알림.gif" height="600" style="margin: 10px"/>
-  <img src="./image/실시간알림.gif" height="600" style="margin: 10px"/>
-  <img src="./image/긴급알림.gif" width="300" style="margin: 10px"/>
-</div>
 
-<br/>
+<table>
+  <tr>
+    <th>Web</th>
+    <th>App</th>
+    <th>Watch</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="./image/웹알림.gif" width="226"/></td>
+    <td align="center"><img src="./image/실시간알림.gif" width="194"/></td>
+    <td align="center"><img src="./image/긴급알림_원형.png" width="220"/></td>
+  </tr>
+</table>
 
-### 워치 제스처
-
-<p align="center">양손이 자유롭지 못한 간호 업무 중에도 손목 제스처로 타이머를 설정할 수 있습니다.</p>
-
-<!-- 기능 시연 GIF 영역 -->
-<div align="center">
-  <img src="./image/워치제스처.gif" width="300" style="margin: 10px"/>
 </div>
 
 <br/>
@@ -183,15 +284,15 @@ HappyNurse는 다음 문제를 해결하고자 합니다.
   <table align="center" width="100%">
       <tr>
           <td width="33%" align="center">
-              <img src="./image/members/김가민.png" width="160" />
+              <img src="./image/members/uniform/김가민.png" width="160" height="213" />
               <br/> 김가민 (Leader) <br/>(Infra & AI)
           </td>
           <td width="33%" align="center">
-              <img src="./image/members/김소연.png" width="160" />
+              <img src="./image/members/uniform/김소연.png" width="160" height="213" />
               <br/> 김소연 <br/>(Backend & Database)
           </td>
           <td width="33%" align="center">
-              <img src="./image/members/문현지.png" width="160" />
+              <img src="./image/members/uniform/문현지.png" width="160" height="213" />
               <br/> 문현지 <br/>(Frontend & Design)
           </td>
       </tr>
@@ -231,15 +332,15 @@ HappyNurse는 다음 문제를 해결하고자 합니다.
   <table align="center" width="100%">
       <tr>
           <td width="33%" align="center">
-              <img src="./image/members/박승찬.png" width="160" />
+              <img src="./image/members/uniform/박승찬.png" width="160" height="213" />
               <br/> 박승찬 <br/>(Backend & AI)
           </td>
           <td width="33%" align="center">
-              <img src="./image/members/이승연.png" width="160" />
+              <img src="./image/members/uniform/이승연.png" width="160" height="213" />
               <br/> 이승연 <br/>(Backend & Design)
           </td>
           <td width="33%" align="center">
-              <img src="./image/members/최현웅.png" width="160" />
+              <img src="./image/members/uniform/최현웅.png" width="160" height="213" />
               <br/> 최현웅 <br/>(Frontend & AI)
           </td>
       </tr>
@@ -566,7 +667,7 @@ frontend/
 <div align="center">
 
 <a href="https://youtu.be/uzQpA21Kzg4">
-  <img src="https://img.youtube.com/vi/uzQpA21Kzg4/maxresdefault.jpg" alt="HappyNurse 영상 포트폴리오" width="700"/>
+  <img src="https://img.youtube.com/vi/uzQpA21Kzg4/maxresdefault.jpg" alt="HappyNurse 영상 포트폴리오" width="500"/>
 </a>
 
 <br/>
